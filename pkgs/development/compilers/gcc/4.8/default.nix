@@ -11,7 +11,7 @@
 , perl ? null # optional, for texi2pod (then pod2man); required for Java
 , gmp, mpfr, mpc, gettext, which
 , libelf                      # optional, for link-time optimizations (LTO)
-, ppl ? null, cloog ? null # optional, for the Graphite optimization framework.
+, ppl ? null, cloog ? null, isl ? null # optional, for the Graphite optimization framework.
 , zlib ? null, boehmgc ? null
 , zip ? null, unzip ? null, pkgconfig ? null, gtk ? null, libart_lgpl ? null
 , libX11 ? null, libXt ? null, libSM ? null, libICE ? null, libXtst ? null
@@ -37,6 +37,9 @@ assert langJava     -> zip != null && unzip != null
 assert langAda      -> gnatboot != null;
 assert langVhdl     -> gnat != null;
 
+# We enable the isl cloog backend.
+assert cloog != null -> isl != null;
+
 # LTO needs libelf and zlib.
 assert libelf != null -> zlib != null;
 
@@ -49,14 +52,19 @@ assert langGo -> langCC;
 with stdenv.lib;
 with builtins;
 
-let version = "4.7.3";
+let version = "4.8.2";
 
     # Whether building a cross-compiler for GNU/Hurd.
     crossGNU = cross != null && cross.config == "i586-pc-gnu";
 
-    patches = [
-      ./build-race.patch
-    ] ++ optional stdenv.isArm [ ./arm-eabi.patch ]
+  /* gccinstall.info says that "parallel make is currently not supported since
+     collisions in profile collecting may occur".
+  */
+    enableParallelBuilding = !profiledCompiler;
+
+    patches = []
+      ++ optional stdenv.isArm ./arm-eabi.patch
+      ++ optional enableParallelBuilding ./parallel-bconfig.patch
       ++ optional (cross != null) ./libstdc++-target.patch
       # ++ optional noSysDirs ./no-sys-dirs.patch
       # The GNAT Makefiles did not pay attention to CFLAGS_FOR_TARGET for its
@@ -89,35 +97,35 @@ let version = "4.7.3";
 
     /* Platform flags */
     platformFlags = let
-        gccArch = stdenv.lib.attrByPath [ "platform" "gcc" "arch" ] null stdenv;
-        gccCpu = stdenv.lib.attrByPath [ "platform" "gcc" "cpu" ] null stdenv;
-        gccAbi = stdenv.lib.attrByPath [ "platform" "gcc" "abi" ] null stdenv;
-        gccFpu = stdenv.lib.attrByPath [ "platform" "gcc" "fpu" ] null stdenv;
-        gccFloat = stdenv.lib.attrByPath [ "platform" "gcc" "float" ] null stdenv;
-        gccMode = stdenv.lib.attrByPath [ "platform" "gcc" "mode" ] null stdenv;
+        gccArch = stdenv.platform.gcc.arch or null;
+        gccCpu = stdenv.platform.gcc.cpu or null;
+        gccAbi = stdenv.platform.gcc.abi or null;
+        gccFpu = stdenv.platform.gcc.fpu or null;
+        gccFloat = stdenv.platform.gcc.float or null;
+        gccMode = stdenv.platform.gcc.mode or null;
         withArch = if gccArch != null then " --with-arch=${gccArch}" else "";
         withCpu = if gccCpu != null then " --with-cpu=${gccCpu}" else "";
         withAbi = if gccAbi != null then " --with-abi=${gccAbi}" else "";
         withFpu = if gccFpu != null then " --with-fpu=${gccFpu}" else "";
         withFloat = if gccFloat != null then " --with-float=${gccFloat}" else "";
         withMode = if gccMode != null then " --with-mode=${gccMode}" else "";
-      in 
-        (withArch +
+      in
+        withArch +
         withCpu +
         withAbi +
         withFpu +
         withFloat +
-        withMode);
+        withMode;
 
     /* Cross-gcc settings */
     crossMingw = (cross != null && cross.libc == "msvcrt");
     crossConfigureFlags = let
-        gccArch = stdenv.lib.attrByPath [ "gcc" "arch" ] null cross;
-        gccCpu = stdenv.lib.attrByPath [ "gcc" "cpu" ] null cross;
-        gccAbi = stdenv.lib.attrByPath [ "gcc" "abi" ] null cross;
-        gccFpu = stdenv.lib.attrByPath [ "gcc" "fpu" ] null cross;
-        gccFloat = stdenv.lib.attrByPath [ "gcc" "float" ] null cross;
-        gccMode = stdenv.lib.attrByPath [ "gcc" "mode" ] null cross;
+        gccArch = stdenv.cross.gcc.arch or null;
+        gccCpu = stdenv.cross.gcc.cpu or null;
+        gccAbi = stdenv.cross.gcc.abi or null;
+        gccFpu = stdenv.cross.gcc.fpu or null;
+        gccFloat = stdenv.cross.gcc.float or null;
+        gccMode = stdenv.cross.gcc.mode or null;
         withArch = if gccArch != null then " --with-arch=${gccArch}" else "";
         withCpu = if gccCpu != null then " --with-cpu=${gccCpu}" else "";
         withAbi = if gccAbi != null then " --with-abi=${gccAbi}" else "";
@@ -180,8 +188,7 @@ let version = "4.7.3";
             " --enable-nls" +
             " --disable-decimal-float") # No final libdecnumber (it may work only in 386)
           );
-    stageNameAddon = if crossStageStatic then "-stage-static" else
-      "-stage-final";
+    stageNameAddon = if crossStageStatic then "-stage-static" else "-stage-final";
     crossNameAddon = if cross != null then "-${cross.config}" + stageNameAddon else "";
 
   bootstrap = cross == null && !stdenv.isArm && !stdenv.isMips;
@@ -198,7 +205,7 @@ stdenv.mkDerivation ({
 
   src = fetchurl {
     url = "mirror://gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2";
-    sha256 = "1hx9h64ivarlzi4hxvq42as5m9vlr5cyzaaq4gzj4i619zmkfz1g";
+    sha256 = "1j6dwgby4g3p3lz7zkss32ghr45zpdidrg8xvazvn91lqxv25p09";
   };
 
   inherit patches;
@@ -267,6 +274,7 @@ stdenv.mkDerivation ({
   buildInputs = [ gmp mpfr mpc libelf ]
     ++ (optional (ppl != null) ppl)
     ++ (optional (cloog != null) cloog)
+    ++ (optional (isl != null) isl)
     ++ (optional (zlib != null) zlib)
     ++ (optionals langJava [ boehmgc zip unzip ])
     ++ (optionals javaAwtGtk ([ gtk libart_lgpl ] ++ xlibs))
@@ -279,22 +287,42 @@ stdenv.mkDerivation ({
     ++ (optional stdenv.isDarwin gnused)
     ;
 
-  configureFlagsArray = stdenv.lib.optionals
-    (ppl != null && ppl ? dontDisableStatic && ppl.dontDisableStatic)
-        [ "--with-host-libstdcxx=-lstdc++ -lgcc_s" ];
+  NIX_LDFLAGS = stdenv.lib.optionalString  stdenv.isSunOS "-lm -ldl";
+
+  preConfigure = ''
+    configureFlagsArray=(
+      ${stdenv.lib.optionalString (ppl != null && ppl ? dontDisableStatic && ppl.dontDisableStatic)
+        "'--with-host-libstdcxx=-lstdc++ -lgcc_s'"}
+      ${stdenv.lib.optionalString (ppl != null && stdenv.isSunOS)
+        "\"--with-host-libstdcxx=-Wl,-rpath,\$prefix/lib/amd64 -lstdc++\"
+         \"--with-boot-ldflags=-L../prev-x86_64-pc-solaris2.11/libstdc++-v3/src/.libs\""}
+    );
+    ${stdenv.lib.optionalString (stdenv.isSunOS && stdenv.is64bit)
+      ''
+        export NIX_LDFLAGS=`echo $NIX_LDFLAGS | sed -e s~$prefix/lib~$prefix/lib/amd64~g`
+        export LDFLAGS_FOR_TARGET="-Wl,-rpath,$prefix/lib/amd64 $LDFLAGS_FOR_TARGET"
+        export CXXFLAGS_FOR_TARGET="-Wl,-rpath,$prefix/lib/amd64 $CXXFLAGS_FOR_TARGET"
+        export CFLAGS_FOR_TARGET="-Wl,-rpath,$prefix/lib/amd64 $CFLAGS_FOR_TARGET"
+      ''}
+    '';
 
   # 'iant' at #go-nuts@freenode, gccgo maintainer, said that
   # they have a bug in 4.7.1 if adding "--disable-static"
-  dontDisableStatic = langGo;
+  dontDisableStatic = langGo || staticCompiler;
 
   configureFlags = "
+    ${if stdenv.isSunOS then
+      " --enable-long-long --enable-libssp --enable-threads=posix --disable-nls --enable-__cxa_atexit " +
+      # On Illumos/Solaris GNU as is preferred
+      " --with-gnu-as --without-gnu-ld "
+      else ""}
+    --enable-lto
     ${if enableMultilib then "" else "--disable-multilib"}
     ${if enableShared then "" else "--disable-shared"}
-    ${if enablePlugin then "--enable-plugin" else ""}
-    ${if ppl != null then "--with-ppl=${ppl}" else ""}
-    ${if cloog != null then
-      "--with-cloog=${cloog} --enable-cloog-backend=isl"
-      else ""}
+    ${if enablePlugin then "--enable-plugin" else "--disable-plugin"}
+    ${if ppl != null then "--with-ppl=${ppl} --disable-ppl-version-check" else ""}
+    ${optionalString (isl != null) "--with-isl=${isl}"}
+    ${optionalString (cloog != null) "--with-cloog=${cloog} --disable-cloog-version-check --enable-cloog-backend=isl"}
     ${if langJava then
       "--with-ecj-jar=${javaEcj} " +
 
@@ -345,11 +373,11 @@ stdenv.mkDerivation ({
     else "install";
 
   crossAttrs = let
-    xgccArch = stdenv.lib.attrByPath [ "gcc" "arch" ] null stdenv.cross;
-    xgccCpu = stdenv.lib.attrByPath [ "gcc" "cpu" ] null stdenv.cross;
-    xgccAbi = stdenv.lib.attrByPath [ "gcc" "abi" ] null stdenv.cross;
-    xgccFpu = stdenv.lib.attrByPath [ "gcc" "fpu" ] null stdenv.cross;
-    xgccFloat = stdenv.lib.attrByPath [ "gcc" "float" ] null stdenv.cross;
+    xgccArch = stdenv.cross.gcc.arch or null;
+    xgccCpu = stdenv.cross.gcc.cpu or null;
+    xgccAbi = stdenv.cross.gcc.abi or null;
+    xgccFpu = stdenv.cross.gcc.fpu or null;
+    xgccFloat = stdenv.cross.gcc.float or null;
     xwithArch = if xgccArch != null then " --with-arch=${xgccArch}" else "";
     xwithCpu = if xgccCpu != null then " --with-cpu=${xgccCpu}" else "";
     xwithAbi = if xgccAbi != null then " --with-abi=${xgccAbi}" else "";
@@ -408,7 +436,8 @@ stdenv.mkDerivation ({
   # Needed for the cross compilation to work
   AR = "ar";
   LD = "ld";
-  CC = "gcc";
+  # http://gcc.gnu.org/install/specific.html#x86-64-x-solaris210
+  CC = if stdenv.system == "x86_64-solaris" then "gcc -m64" else "gcc";
 
   # Setting $CPATH and $LIBRARY_PATH to make sure both `gcc' and `xgcc' find
   # the library headers and binaries, regarless of the language being
@@ -432,8 +461,7 @@ stdenv.mkDerivation ({
 
                                    # On GNU/Hurd glibc refers to Mach & Hurd
                                    # headers.
-                                   ++ optionals (libcCross != null &&
-                                                 hasAttr "propagatedBuildInputs" libcCross)
+                                   ++ optionals (libcCross != null && libcCross ? "propagatedBuildInputs" )
                                         libcCross.propagatedBuildInputs)));
 
   LIBRARY_PATH = concatStrings
@@ -456,14 +484,10 @@ stdenv.mkDerivation ({
            " -L${libpthreadCross}/lib -Wl,${libpthreadCross.TARGET_LDFLAGS}")
     else null;
 
-  passthru = { inherit langC langCC langAda langFortran langVhdl
-      langGo enableMultilib version; };
+  passthru =
+    { inherit langC langCC langAda langFortran langVhdl langGo enableMultilib version; };
 
-  /* From gccinstall.info:
-     "parallel make is currently not supported since collisions in profile
-     collecting may occur"
-  */
-  enableParallelBuilding = !profiledCompiler;
+  inherit enableParallelBuilding;
 
   meta = {
     homepage = http://gcc.gnu.org/;
@@ -480,11 +504,7 @@ stdenv.mkDerivation ({
       compiler used in the GNU system including the GNU/Linux variant.
     '';
 
-    maintainers = [
-      stdenv.lib.maintainers.ludo
-      stdenv.lib.maintainers.viric
-      stdenv.lib.maintainers.shlevy
-    ];
+    maintainers = with stdenv.lib.maintainers; [ ludo viric shlevy simons ];
 
     # Volunteers needed for the {Cyg,Dar}win ports of *PPL.
     # gnatboot is not available out of linux platforms, so we disable the darwin build
