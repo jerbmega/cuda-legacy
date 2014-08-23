@@ -8,9 +8,8 @@ mkdir $NIX_FIXINC_DUMMY
 if test "$staticCompiler" = "1"; then
     EXTRA_LDFLAGS="-static"
 else
-    EXTRA_LDFLAGS="-Wl,-rpath,$lib/lib"
+    EXTRA_LDFLAGS=""
 fi
-
 
 # GCC interprets empty paths as ".", which we don't want.
 if test -z "$CPATH"; then unset CPATH; fi
@@ -30,7 +29,7 @@ if test "$noSysDirs" = "1"; then
         # Use *real* header files, otherwise a limits.h is generated
         # that does not include Glibc's limits.h (notably missing
         # SSIZE_MAX, which breaks the build).
-        export NIX_FIXINC_DUMMY=$libc_dev/include
+        export NIX_FIXINC_DUMMY=$(cat $NIX_GCC/nix-support/orig-libc)/include
 
         # The path to the Glibc binaries such as `crti.o'.
         glibc_libdir="$(cat $NIX_GCC/nix-support/orig-libc)/lib"
@@ -72,11 +71,12 @@ if test "$noSysDirs" = "1"; then
         unset CPATH
         if test -z "$crossStageStatic"; then
             EXTRA_TARGET_CFLAGS="-B${libcCross}/lib -idirafter ${libcCross}/include"
-            EXTRA_TARGET_LDFLAGS="-Wl,-L${libcCross}/lib"
+            EXTRA_TARGET_LDFLAGS="-Wl,-L${libcCross}/lib -Wl,-rpath,${libcCross}/lib -Wl,-rpath-link,${libcCross}/lib"
         fi
     else
         if test -z "$NIX_GCC_CROSS"; then
             EXTRA_TARGET_CFLAGS="$EXTRA_FLAGS"
+            EXTRA_TARGET_CXXFLAGS="$EXTRA_FLAGS"
             EXTRA_TARGET_LDFLAGS="$EXTRA_LDFLAGS"
         else
             # This the case of cross-building the gcc.
@@ -95,7 +95,9 @@ if test "$noSysDirs" = "1"; then
             NIX_FIXINC_DUMMY_CROSS=$(cat $NIX_GCC_CROSS/nix-support/orig-libc)/include
 
             # The path to the Glibc binaries such as `crti.o'.
-            glibc_libdir="$(cat $NIX_GCC_CROSS/nix-support/orig-libc)/lib"
+            glibc_dir="$(cat $NIX_GCC_CROSS/nix-support/orig-libc)"
+            glibc_libdir="$glibc_dir/lib"
+            configureFlags="$configureFlags --with-native-system-header-dir=$glibc_dir/include"
 
             extraFlags="-I$NIX_FIXINC_DUMMY_CROSS $extraFlags"
             extraLDFlags="-L$glibc_libdir -rpath $glibc_libdir $extraLDFlags"
@@ -117,7 +119,9 @@ if test "$noSysDirs" = "1"; then
         NATIVE_SYSTEM_HEADER_DIR="$NIX_FIXINC_DUMMY" \
         SYSTEM_HEADER_DIR="$NIX_FIXINC_DUMMY" \
         CFLAGS_FOR_BUILD="$EXTRA_FLAGS $EXTRA_LDFLAGS" \
+        CXXFLAGS_FOR_BUILD="$EXTRA_FLAGS $EXTRA_LDFLAGS" \
         CFLAGS_FOR_TARGET="$EXTRA_TARGET_CFLAGS $EXTRA_TARGET_LDFLAGS" \
+        CXXFLAGS_FOR_TARGET="$EXTRA_TARGET_CFLAGS $EXTRA_TARGET_LDFLAGS" \
         FLAGS_FOR_TARGET="$EXTRA_TARGET_CFLAGS $EXTRA_TARGET_LDFLAGS" \
         LDFLAGS_FOR_BUILD="$EXTRA_FLAGS $EXTRA_LDFLAGS" \
         LDFLAGS_FOR_TARGET="$EXTRA_TARGET_LDFLAGS $EXTRA_TARGET_LDFLAGS" \
@@ -151,7 +155,7 @@ if test -n "$targetConfig"; then
     dontStrip=1
 fi
 
-
+providedPreConfigure="$preConfigure";
 preConfigure() {
     if test -n "$newlibSrc"; then
         tar xvf "$newlibSrc" -C ..
@@ -171,8 +175,9 @@ preConfigure() {
         # Patch the configure script so it finds glibc headers.  It's
         # important for example in order not to get libssp built,
         # because its functionality is in glibc already.
+        glibc_headers="$(cat $NIX_GCC/nix-support/orig-libc)/include"
         sed -i \
-            -e "s,glibc_header_dir=/usr/include,glibc_header_dir=$libc_dev/include", \
+            -e "s,glibc_header_dir=/usr/include,glibc_header_dir=$glibc_headers", \
             gcc/configure
     fi
 
@@ -183,6 +188,9 @@ preConfigure() {
         configureFlags="$configureFlags --with-build-sysroot=`pwd`/.."
     fi
 
+    # Eval the preConfigure script from nix expression.
+    eval $providedPreConfigure;
+    env;
     # Perform the build in a different directory.
     mkdir ../build
     cd ../build
@@ -196,24 +204,7 @@ postConfigure() {
 }
 
 
-preInstall() {
-    # Make ‘lib64’ a symlink to ‘lib’.
-    if [ -n "$is64bit" -a -z "$enableMultilib" ]; then
-        mkdir -p $out/lib
-        ln -s lib $out/lib64
-    fi
-}
-
-
 postInstall() {
-    # Move runtime libraries to $lib.
-    mkdir -p $lib/lib
-    ln -s lib $lib/lib64
-    mv -v $out/lib/lib*.so $out/lib/lib*.so.*[0-9] $out/lib/*.la $lib/lib/
-    for i in $lib/lib/*.la; do
-        substituteInPlace $i --replace $out $lib
-    done
-
     # Remove precompiled headers for now.  They are very big and
     # probably not very useful yet.
     find $out/include -name "*.gch" -exec rm -rf {} \; -prune
@@ -225,7 +216,6 @@ postInstall() {
 
     # More dependencies with the previous gcc or some libs (gccbug stores the build command line)
     rm -rf $out/bin/gccbug
-
     # Take out the bootstrap-tools from the rpath, as it's not needed at all having $out
     for i in $out/libexec/gcc/*/*/*; do
         if PREV_RPATH=`patchelf --print-rpath $i`; then
@@ -234,7 +224,7 @@ postInstall() {
     done
 
     # Get rid of some "fixed" header files
-    rm -rfv $out/lib/gcc/*/*/include-fixed/{root,linux}
+    rm -rf $out/lib/gcc/*/*/include/root
 
     # Replace hard links for i686-pc-linux-gnu-gcc etc. with symlinks.
     for i in $out/bin/*-gcc*; do
@@ -248,11 +238,6 @@ postInstall() {
             ln -sfn g++ $i
         fi
     done
-
-    # Disable RANDMMAP on grsec, which causes segfaults when using
-    # precompiled headers.
-    # See https://bugs.gentoo.org/show_bug.cgi?id=301299#c31
-    paxmark r $out/libexec/gcc/*/*/{cc1,cc1plus}
 
     eval "$postInstallGhdl"
 }

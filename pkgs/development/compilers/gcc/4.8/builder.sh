@@ -33,7 +33,7 @@ if test "$noSysDirs" = "1"; then
 
         # The path to the Glibc binaries such as `crti.o'.
         glibc_libdir="$(cat $NIX_GCC/nix-support/orig-libc)/lib"
-        
+
     else
         # Hack: support impure environments.
         extraFlags="-isystem /usr/include"
@@ -50,10 +50,10 @@ if test "$noSysDirs" = "1"; then
     # bootstrap compiler are optimized and (optionally) contain
     # debugging information (info "(gccinstall) Building").
     if test -n "$dontStrip"; then
-	extraFlags="-O2 -g $extraFlags"
+        extraFlags="-O2 -g $extraFlags"
     else
-	# Don't pass `-g' at all; this saves space while building.
-	extraFlags="-O2 $extraFlags"
+        # Don't pass `-g' at all; this saves space while building.
+        extraFlags="-O2 $extraFlags"
     fi
 
     EXTRA_FLAGS="$extraFlags"
@@ -109,13 +109,11 @@ if test "$noSysDirs" = "1"; then
         fi
     fi
 
-
     # CFLAGS_FOR_TARGET are needed for the libstdc++ configure script to find
     # the startfiles.
     # FLAGS_FOR_TARGET are needed for the target libraries to receive the -Bxxx
     # for the startfiles.
-    makeFlagsArray=( \
-        "${makeFlagsArray[@]}" \
+    makeFlagsArray+=( \
         NATIVE_SYSTEM_HEADER_DIR="$NIX_FIXINC_DUMMY" \
         SYSTEM_HEADER_DIR="$NIX_FIXINC_DUMMY" \
         CFLAGS_FOR_BUILD="$EXTRA_FLAGS $EXTRA_LDFLAGS" \
@@ -128,8 +126,7 @@ if test "$noSysDirs" = "1"; then
         )
 
     if test -z "$targetConfig"; then
-        makeFlagsArray=( \
-            "${makeFlagsArray[@]}" \
+        makeFlagsArray+=( \
             BOOT_CFLAGS="$EXTRA_FLAGS $EXTRA_LDFLAGS" \
             BOOT_LDFLAGS="$EXTRA_TARGET_CFLAGS $EXTRA_TARGET_LDFLAGS" \
             )
@@ -138,13 +135,11 @@ if test "$noSysDirs" = "1"; then
     if test -n "$targetConfig" -a "$crossStageStatic" == 1; then
         # We don't want the gcc build to assume there will be a libc providing
         # limits.h in this stagae
-        makeFlagsArray=( \
-            "${makeFlagsArray[@]}" \
+        makeFlagsArray+=( \
             LIMITS_H_TEST=false \
             )
     else
-        makeFlagsArray=( \
-            "${makeFlagsArray[@]}" \
+        makeFlagsArray+=( \
             LIMITS_H_TEST=true \
             )
     fi
@@ -155,7 +150,7 @@ if test -n "$targetConfig"; then
     dontStrip=1
 fi
 
-
+providedPreConfigure="$preConfigure";
 preConfigure() {
     if test -n "$newlibSrc"; then
         tar xvf "$newlibSrc" -C ..
@@ -163,6 +158,7 @@ preConfigure() {
         # Patch to get armvt5el working:
         sed -i -e 's/ arm)/ arm*)/' newlib/configure.host
     fi
+
     # Bug - they packaged zlib
     if test -d "zlib"; then
         # This breaks the build without-headers, which should build only
@@ -188,6 +184,9 @@ preConfigure() {
         configureFlags="$configureFlags --with-build-sysroot=`pwd`/.."
     fi
 
+    # Eval the preConfigure script from nix expression.
+    eval "$providedPreConfigure"
+
     # Perform the build in a different directory.
     mkdir ../build
     cd ../build
@@ -201,6 +200,15 @@ postConfigure() {
 }
 
 
+preInstall() {
+    # Make ‘lib64’ a symlink to ‘lib’.
+    if [ -n "$is64bit" -a -z "$enableMultilib" ]; then
+        mkdir -p $out/lib
+        ln -s lib $out/lib64
+    fi
+}
+
+
 postInstall() {
     # Remove precompiled headers for now.  They are very big and
     # probably not very useful yet.
@@ -210,7 +218,7 @@ postInstall() {
     # previous gcc.
     rm -rf $out/libexec/gcc/*/*/install-tools
     rm -rf $out/lib/gcc/*/*/install-tools
-    
+
     # More dependencies with the previous gcc or some libs (gccbug stores the build command line)
     rm -rf $out/bin/gccbug
     # Take out the bootstrap-tools from the rpath, as it's not needed at all having $out
@@ -235,6 +243,11 @@ postInstall() {
             ln -sfn g++ $i
         fi
     done
+
+    # Disable RANDMMAP on grsec, which causes segfaults when using
+    # precompiled headers.
+    # See https://bugs.gentoo.org/show_bug.cgi?id=301299#c31
+    paxmark r $out/libexec/gcc/*/*/{cc1,cc1plus}
 
     eval "$postInstallGhdl"
 }
