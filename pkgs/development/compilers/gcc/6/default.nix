@@ -13,7 +13,7 @@
 , perl ? null # optional, for texi2pod (then pod2man); required for Java
 , gmp, mpfr, libmpc, gettext, which
 , libelf                      # optional, for link-time optimizations (LTO)
-, cloog ? null, isl ? null # optional, for the Graphite optimization framework.
+, isl ? null # optional, for the Graphite optimization framework.
 , zlib ? null, boehmgc ? null
 , zip ? null, unzip ? null, pkgconfig ? null
 , gtk ? null, libart_lgpl ? null
@@ -33,6 +33,8 @@
 , libpthread ? null, libpthreadCross ? null  # required for GNU/Hurd
 , stripped ? true
 , gnused ? null
+, binutils ? null
+, cloog # unused; just for compat with gcc4, as we override the parameter on some places
 }:
 
 assert langJava     -> zip != null && unzip != null
@@ -41,14 +43,14 @@ assert langJava     -> zip != null && unzip != null
 assert langAda      -> gnatboot != null;
 assert langVhdl     -> gnat != null;
 
-# We enable the isl cloog backend.
-assert cloog != null -> isl != null;
-
 # LTO needs libelf and zlib.
 assert libelf != null -> zlib != null;
 
 # Make sure we get GNU sed.
 assert stdenv.isDarwin -> gnused != null;
+
+# Need c++filt on darwin
+assert stdenv.isDarwin -> binutils != null;
 
 # The go frontend is written in c++
 assert langGo -> langCC;
@@ -56,7 +58,7 @@ assert langGo -> langCC;
 with stdenv.lib;
 with builtins;
 
-let version = "4.9.3";
+let version = "6.1.0";
 
     # Whether building a cross-compiler for GNU/Hurd.
     crossGNU = cross != null && cross.config == "i586-pc-gnu";
@@ -65,15 +67,12 @@ let version = "4.9.3";
 
     patches =
       [ ../use-source-date-epoch.patch ]
-      ++ optionals enableParallelBuilding [ ../parallel-bconfig.patch ./parallel-strsignal.patch ]
       ++ optional (cross != null) ../libstdc++-target.patch
       ++ optional noSysDirs ../no-sys-dirs.patch
       # The GNAT Makefiles did not pay attention to CFLAGS_FOR_TARGET for its
       # target libraries and tools.
       ++ optional langAda ../gnat-cflags.patch
-      ++ optional langFortran ../gfortran-driving.patch
-      # The NXConstStr.patch can be removed at 4.9.4
-      ++ optional stdenv.isDarwin ../gfortran-darwin-NXConstStr.patch;
+      ++ optional langFortran ../gfortran-driving.patch;
 
     javaEcj = fetchurl {
       # The `$(top_srcdir)/ecj.jar' file is automatically picked up at
@@ -213,15 +212,12 @@ stdenv.mkDerivation ({
 
   src = fetchurl {
     url = "mirror://gnu/gcc/gcc-${version}/gcc-${version}.tar.bz2";
-    sha256 = "0zmnm00d2a1hsd41g34bhvxzvxisa2l584q3p447bd91lfjv4ci3";
+    sha256 = "0ld3y4rgimyqgx1nwvzqyl5gr4wzc0ch4akkvsqp3fgbmdfcii09";
   };
 
   inherit patches;
 
-  hardeningDisable = [ "format" ];
-
-  outputs = if langJava || langGo then ["out" "man" "info"]
-    else [ "out" "lib" "man" "info" ];
+  outputs = [ "out" "lib" "man" "info" ];
   setOutputFlags = false;
   NIX_NO_SELF_RPATH = true;
 
@@ -289,7 +285,6 @@ stdenv.mkDerivation ({
     ++ (optional javaAwtGtk pkgconfig);
 
   buildInputs = [ gmp mpfr libmpc libelf ]
-    ++ (optional (cloog != null) cloog)
     ++ (optional (isl != null) isl)
     ++ (optional (zlib != null) zlib)
     ++ (optionals langJava [ boehmgc zip unzip ])
@@ -301,10 +296,12 @@ stdenv.mkDerivation ({
     # The builder relies on GNU sed (for instance, Darwin's `sed' fails with
     # "-i may not be used with stdin"), and `stdenvNative' doesn't provide it.
     ++ (optional stdenv.isDarwin gnused)
+    ++ (optional stdenv.isDarwin binutils)
     ;
 
+  NIX_LDFLAGS = stdenv.lib.optionalString  stdenv.isSunOS "-lm -ldl";
+
   preConfigure = stdenv.lib.optionalString (stdenv.isSunOS && stdenv.is64bit) ''
-    sed -i -e "s/-lrt//g" libstdc++-v3/configure
     export NIX_LDFLAGS=`echo $NIX_LDFLAGS | sed -e s~$prefix/lib~$prefix/lib/amd64~g`
     export LDFLAGS_FOR_TARGET="-Wl,-rpath,$prefix/lib/amd64 $LDFLAGS_FOR_TARGET"
     export CXXFLAGS_FOR_TARGET="-Wl,-rpath,$prefix/lib/amd64 $CXXFLAGS_FOR_TARGET"
@@ -318,11 +315,7 @@ stdenv.mkDerivation ({
        FLAGS_FOR_TARGET=-F$SDKROOT/System/Library/Frameworks \
       )
     fi
-  ''
-  + stdenv.lib.optionalString (langJava || langGo) ''
-    export lib=$out;
-  ''
-  ;
+  '';
 
   dontDisableStatic = true;
 
@@ -337,7 +330,6 @@ stdenv.mkDerivation ({
     ${if enableShared then "" else "--disable-shared"}
     ${if enablePlugin then "--enable-plugin" else "--disable-plugin"}
     ${optionalString (isl != null) "--with-isl=${isl}"}
-    ${optionalString (cloog != null) "--with-cloog=${cloog} --disable-cloog-version-check --enable-cloog-backend=isl"}
     ${if langJava then
       "--with-ecj-jar=${javaEcj} " +
 
@@ -418,7 +410,6 @@ stdenv.mkDerivation ({
     configureFlags = ''
       ${if enableMultilib then "" else "--disable-multilib"}
       ${if enableShared then "" else "--disable-shared"}
-      ${if cloog != null then "--with-cloog=${cloog.crossDrv} --enable-cloog-backend=isl" else ""}
       ${if langJava then "--with-ecj-jar=${javaEcj.crossDrv}" else ""}
       ${if javaAwtGtk then "--enable-java-awt=gtk" else ""}
       ${if langJava && javaAntlr != null then "--with-antlr-jar=${javaAntlr.crossDrv}" else ""}
@@ -531,7 +522,6 @@ stdenv.mkDerivation ({
     platforms =
       stdenv.lib.platforms.linux ++
       stdenv.lib.platforms.freebsd ++
-      stdenv.lib.platforms.illumos ++
       optionals (langAda == false) stdenv.lib.platforms.darwin;
   };
 }
@@ -545,10 +535,4 @@ stdenv.mkDerivation ({
 // optionalAttrs (!stripped || cross != null) { dontStrip = true; NIX_STRIP_DEBUG = 0; }
 
 // optionalAttrs (enableMultilib) { dontMoveLib64 = true; }
-
-// optionalAttrs (langJava) {
-     postFixup = ''
-       target="$(echo "$out/libexec/gcc"/*/*/ecj*)"
-       patchelf --set-rpath "$(patchelf --print-rpath "$target"):$out/lib" "$target"
-     '';}
 )
