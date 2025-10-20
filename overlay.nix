@@ -1,8 +1,5 @@
 final: prev: {
-  gcc9Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc9;
-  gcc10Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc10;
-  gcc11Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc11;
-
+  # Only include compilers which have been removed from upstream.
   inherit
     (final.callPackage ./pkgs/development/compilers/gcc/all.nix {
       # From https://github.com/NixOS/nixpkgs/blob/9296b9142eb6b016e441237ce433022f31364a83/pkgs/top-level/stage.nix#L72-L77
@@ -16,8 +13,15 @@ final: prev: {
     gcc9
     gcc10
     gcc11
+    gcc12
     ;
 
+  gcc9Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc9;
+  gcc10Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc10;
+  gcc11Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc11;
+  gcc12Stdenv = final.overrideCC final.gccStdenv final.buildPackages.gcc12;
+
+  # Only include cuda package sets which have been removed upstream.
   cudaPackages_11_0 = final.callPackage ./pkgs/top-level/cuda-packages.nix { cudaVersion = "11.0"; };
   cudaPackages_11_1 = final.callPackage ./pkgs/top-level/cuda-packages.nix { cudaVersion = "11.1"; };
   cudaPackages_11_2 = final.callPackage ./pkgs/top-level/cuda-packages.nix { cudaVersion = "11.2"; };
