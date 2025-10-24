@@ -25,8 +25,6 @@ let
       gcc10 = null;
       gcc11 = null;
       gcc12 = null;
-      gcc13 = null;
-      gcc14 = null;
     };
 
   cudaOverlays =
