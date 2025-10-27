@@ -23,8 +23,7 @@
       inputs =
         let
           defaults = {
-            # Nixpkgs is tracking https://github.com/NixOS/nixpkgs/pull/437723/commits
-            nixpkgs = getFlake "github:NixOS/nixpkgs/8af89d087539c7e161df2f14ecfdb76f4cf66241";
+            nixpkgs = getFlake "github:NixOS/nixpkgs/abdab3104435d3cb41bc3f12c6f76113f6e30fdc";
             flake-parts = getFlake "github:hercules-ci/flake-parts/864599284fc7c0ba6357ed89ed5e2cd5040f0c04";
           };
 
