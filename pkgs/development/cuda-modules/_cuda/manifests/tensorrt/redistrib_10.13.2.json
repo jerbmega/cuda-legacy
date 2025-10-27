@@ -1,0 +1,36 @@
+{
+    "release_date": "2025-08-05",
+    "release_label": "10.13.2",
+    "release_product": "tensorrt",
+    "tensorrt": {
+        "name": "NVIDIA TensorRT",
+        "license": "TensorRT",
+        "version": "10.13.2.6",
+        "cuda_variant": [
+            "12",
+            "13"
+        ],
+        "linux-sbsa": {
+            "cuda13": {
+                "md5": "0c0c1102c85dc64ea05eb6f42d380d9b",
+                "relative_path": "tensorrt/10.13.2/tars/TensorRT-10.13.2.6.Linux.aarch64-gnu.cuda-13.0.tar.gz",
+                "sha256": "c17c202d0c6cc2291f1604acb9e356b6e51731e2f94f6bd46127a93410efe312",
+                "size": "5004035677"
+            }
+        },
+        "linux-x86_64": {
+            "cuda12": {
+                "md5": "fb4cce28139a2a5ecf1e9a23e3d3efb5",
+                "relative_path": "tensorrt/10.13.2/tars/TensorRT-10.13.2.6.Linux.x86_64-gnu.cuda-12.9.tar.gz",
+                "sha256": "63282a5338afa724142d58cc0c87a9f0e89460ef05d6f37ef52e5468aee8ae5b",
+                "size": "6932705370"
+            },
+            "cuda13": {
+                "md5": "017cb735cda305e0fb2c230000ae5ad7",
+                "relative_path": "tensorrt/10.13.2/tars/TensorRT-10.13.2.6.Linux.x86_64-gnu.cuda-13.0.tar.gz",
+                "sha256": "43865725c04bdb27023c7c2235a197424b8223766d1772961d2d36fe3b571587",
+                "size": "6183100700"
+            }
+        }
+    }
+}
