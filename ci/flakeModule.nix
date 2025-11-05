@@ -5,27 +5,8 @@
     "x86_64-linux"
   ];
 
-  imports = [
-    (
-      { flake-parts-lib, lib, ... }:
-      flake-parts-lib.mkTransposedPerSystemModule {
-        name = "hydraJobs";
-        option = lib.mkOption {
-          type = lib.types.attrsWith {
-            elemType = lib.types.raw;
-            lazy = true;
-            placeholder = "hydraJobs";
-          };
-          default = { };
-        };
-        file = ./flakeModule.nix;
-      }
-    )
-  ];
-
   perSystem =
     {
-      lib,
       pkgs,
       system,
       ...
@@ -35,15 +16,14 @@
         config =
           { pkgs }:
           {
+            # By default, Nixpkgs allows aliases. Setting them to false allows us to detect breakages sooner rather
+            # than later.
+            allowAliases = false;
             allowUnfreePredicate = pkgs._cuda.lib.allowUnfreeCudaPredicate;
             cudaSupport = true;
           };
         localSystem = { inherit system; };
         overlays = [ inputs.self.overlays.default ];
-      };
-
-      hydraJobs = import ./mkHydraJobs.nix {
-        inherit lib pkgs;
       };
 
       legacyPackages = pkgs;

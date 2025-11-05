@@ -23,7 +23,7 @@
       inputs =
         let
           defaults = {
-            nixpkgs = getFlake "github:NixOS/nixpkgs/11dec9d8a7ea78bd88e7c8fe73a3a14c552b0989";
+            nixpkgs = getFlake "github:NixOS/nixpkgs/d749418ffa2746d7f6e2d710b173f4f7088cfe02";
             flake-parts = getFlake "github:hercules-ci/flake-parts/0010412d62a25d959151790968765a70c436598b";
           };
 
@@ -56,7 +56,6 @@
           checks = "dev";
           formatter = "dev";
 
-          hydraJobs = "ci";
           legacyPackages = "ci";
         };
 
@@ -68,7 +67,7 @@
             module = ./dev/flakeModule.nix;
           };
 
-          # `ci` sets `_modules.args.pkgs`, exposes it as `legacyPackages`, and include Hydra jobsets.
+          # `ci` sets `_modules.args.pkgs`, exposes it as `legacyPackages`.
           ci = {
             extraInputs = { inherit (inputs) nixpkgs; };
             module = ./ci/flakeModule.nix;
@@ -81,7 +80,6 @@
       inherit (flake)
         checks
         formatter
-        hydraJobs
         legacyPackages
         ;
     };
