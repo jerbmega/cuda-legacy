@@ -23,7 +23,11 @@
             cudaSupport = true;
           };
         localSystem = { inherit system; };
-        overlays = [ inputs.self.overlays.default ];
+        overlays = [
+          inputs.self.overlays.default
+          # For CI or building from our flake, make our CUDA package sets top-level instead of upstream's ones.
+          (_: prev: prev.cudaPackagesVersions)
+        ];
       };
 
       legacyPackages = pkgs;

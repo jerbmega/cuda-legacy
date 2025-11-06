@@ -29,26 +29,6 @@ in
 
   inherit (self.outputs.inputs.nixpkgs) lib;
 
-  cudaPackageSetNames = [
-    "cudaPackages_11_4"
-    "cudaPackages_11_5"
-    "cudaPackages_11_6"
-    "cudaPackages_11_7"
-    "cudaPackages_11_8"
-
-    "cudaPackages_12_0"
-    "cudaPackages_12_1"
-    "cudaPackages_12_2"
-    "cudaPackages_12_3"
-    "cudaPackages_12_4"
-    "cudaPackages_12_5"
-    "cudaPackages_12_6"
-    "cudaPackages_12_8"
-    "cudaPackages_12_9"
-
-    "cudaPackages_13_0"
-  ];
-
   releaseLib = import (nixpkgs + "/pkgs/top-level/release-lib.nix") {
     inherit supportedSystems;
     system = evalSystem;
@@ -65,7 +45,12 @@ in
         ${if cudaCapabilities != null then "cudaCapabilities" else null} = cudaCapabilities;
         inHydra = true;
       };
-      overlays = [ self.outputs.overlays.default ] ++ args.extraOverlays or [ ];
+      overlays = [
+        self.outputs.overlays.default
+        # Always make our CUDA package sets top-level instead of upstream's ones.
+        (_: prev: prev.cudaPackagesVersions)
+      ]
+      ++ args.extraOverlays or [ ];
     };
   };
 }

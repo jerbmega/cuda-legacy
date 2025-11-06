@@ -15,10 +15,8 @@
   nixpkgs ? null,
 }@args:
 let
-  inherit (import ./common.nix args) cudaPackageSetNames lib releaseLib;
+  inherit (import ./common.nix args) lib releaseLib;
 in
 releaseLib.mapTestOn (
-  lib.genAttrs cudaPackageSetNames (
-    cudaPackageSetName: releaseLib.packagePlatforms releaseLib.pkgs.${cudaPackageSetName}
-  )
+  lib.mapAttrs (lib.const releaseLib.packagePlatforms) releaseLib.pkgs.cudaPackagesVersions
 )

@@ -15,7 +15,7 @@
   nixpkgs ? null,
 }@args:
 let
-  inherit (import ./common.nix args) cudaPackageSetNames lib releaseLib;
+  inherit (import ./common.nix args) lib releaseLib;
 
   # NOTE: Not all packages are written to support earlier CUDA versions.
   # For example, cupy needs the CUDA profiler API, which isn't available in early versions.
@@ -42,7 +42,5 @@ let
   };
 in
 releaseLib.mapTestOn (
-  lib.genAttrs cudaPackageSetNames (cudaPackageSetName: {
-    pkgs = packages;
-  })
+  lib.genAttrs (lib.attrNames releaseLib.pkgs.cudaPackagesVersions) (lib.const { pkgs = packages; })
 )
