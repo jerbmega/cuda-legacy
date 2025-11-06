@@ -38,7 +38,7 @@
       # NOTE: None of these overlays change the default version of any package sets;
       # For example, including `overlays.cudaPackages_11_4` will not set `cudaPackages_11` or `cudaPackages`;
       # it only replaces `cudaPackages_11_4`.
-      overlays = import ./overlays;
+      overlays.default = import ./overlays;
 
       flake = inputs.flake-parts.lib.mkFlake { inherit inputs; } {
         # Required but can be empty -- this is set by the various sub-flake-modules.

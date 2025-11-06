@@ -21,8 +21,12 @@ final: prev: {
       extensions = prevCuda.extensions ++ [
         (finalCudaPackages: prevCudaPackages: {
           # cuda_cccl = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/cuda_cccl.nix { };
-          libcal = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcal/package.nix { };
-          libcublasmp = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcublasmp.nix { };
+          libcal =
+            finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcal/package.nix
+              { };
+          libcublasmp =
+            finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcublasmp.nix
+              { };
           libcudss = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcudss.nix { };
         })
       ];
