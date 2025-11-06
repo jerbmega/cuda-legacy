@@ -16,5 +16,5 @@ unchangedIfPresent prev.gccVersions
 // {
   # TODO(@connorbaker): Find a better way to do this, perhaps via groupBy, sorting versions,
   # and choosing the latest for a major release if there isn't one.
-  cudaPackages_11 = prev.cudaPackages_11 or prev.cudaPackagesVersions.cudaPackages_11_8;
+  cudaPackages_11 = prev.cudaPackages_11 or final.cudaPackagesVersions.cudaPackages_11_8;
 }
