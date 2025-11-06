@@ -3,11 +3,18 @@
 final: prev:
 let
   inherit (builtins)
+    attrNames
+    foldl'
+    groupBy
     hasAttr
     mapAttrs
     seq
     tryEval
     ;
+
+  groupBy' =
+    op: nul: pred: lst:
+    mapAttrs (name: foldl' op nul) (groupBy pred lst);
 
   getAttrOr =
     attrs: name: value:
@@ -18,6 +25,27 @@ let
     # NOTE: We cannot use deepSeq as the value may be recursive.
     if (tryEval (seq (attrs.${name} or null) (hasAttr name attrs))).value then attrs.${name} else value;
 
+  cudaPackagesMajorVersionAliases =
+    groupBy'
+      (
+        # cudaPackages is the accumulator. Because this is implemented with foldl, it is initially null.
+        # After that, it should never be null.
+        cudaPackages: name:
+        let
+          cudaPackages' = prev.cudaPackagesVersions.${name};
+        in
+        # If current cudaPackages is null or older than the other cudaPackages, use the other cudaPackages
+        if cudaPackages == null || cudaPackages.cudaOlder cudaPackages'.cudaMajorMinorPatchVersion then
+          cudaPackages'
+        else
+          cudaPackages
+      )
+      null
+      (name: builtins.head (builtins.match "^(cudaPackages_[[:digit:]]+).*$" name))
+      # NOTE: Must use attribute set names instead of values because only the names are strictly evaluated and therefore
+      # won't cause infinite recursion.
+      (attrNames prev.cudaPackagesVersions);
+
   # If the attribute exists in `prev` already, pass it through unchanged.
   # Otherwise, use the value provided.
   unchangedIfPresent = mapAttrs (getAttrOr prev);
@@ -25,8 +53,4 @@ in
 unchangedIfPresent prev.gccVersions
 // unchangedIfPresent prev.gccStdenvVersions
 // unchangedIfPresent prev.cudaPackagesVersions
-// {
-  # TODO(@connorbaker): Find a better way to do this, perhaps via groupBy, sorting versions,
-  # and choosing the latest for a major release if there isn't one.
-  cudaPackages_11 = getAttrOr prev "cudaPackages_11" final.cudaPackagesVersions.cudaPackages_11_8;
-}
+// unchangedIfPresent cudaPackagesMajorVersionAliases
