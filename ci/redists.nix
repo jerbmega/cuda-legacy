@@ -20,50 +20,51 @@
 let
   inherit
     (import ./common.nix (removeAttrs args [ "redistName" ] // { extraOverlays = [ redistOverlay ]; }))
-    lib # NOTE: lib doesn't depend on extraOverlays so we can use it to construct redistOverlay.
+    lib
     releaseLib
     ;
 
-  inherit (lib)
-    attrNames
-    concatMapAttrs
-    genAttrs
-    hasAttr
-    mapAttrs'
-    optionalAttrs
-    recurseIntoAttrs
-    ;
-
   # NOTE: Assumes redist is stand-alone -- that it does not depend on other redistributables.
-  redistOverlay =
-    final: prev:
-    genAttrs (attrNames prev.cudaPackagesVersions) (
-      cudaPackageSetName:
-      let
-        cudaPackages = prev.${cudaPackageSetName};
-      in
-      # Replace each instance of the CUDA package set with just the redists we care about.
-      # TODO(@connorbaker): Replacing the entire package set breaks evaluation of redists which depend on other
-      # packages; for example, libcublasmp breaks because it depends on ucc and we get a missing attribute
-      # exception when ucc tries to access cudaPackages.backendStdenv.
-      mapAttrs' (redistVersion: redistManifest: {
-        name = prev._cuda.lib.mkVersionedName redistName redistVersion;
-        value = recurseIntoAttrs (
-          concatMapAttrs (
-            name: release:
-            # Filter for supported packages and releases
-            optionalAttrs (hasAttr name cudaPackages) {
-              ${name} = cudaPackages.${name}.overrideAttrs (prevAttrs: {
-                passthru = prevAttrs.passthru // {
-                  inherit release;
-                };
-              });
-            }
-          ) redistManifest
-        );
-      }) prev._cuda.manifests.${redistName}
+  redistOverlay = final: prev: {
+    _cuda = prev._cuda.extend (
+      finalCuda: prevCuda: {
+        # Add the overlay to _cuda.extensions so each CUDA package set has it added automatically.
+        extensions = prevCuda.extensions ++ [
+          (
+            finalCudaPackages: _:
+            # Add attribute sets to each CUDA package set corresponding to the versioned name of the redist;
+            # these contain the unverionsed names of the packages available from that version of the redist,
+            # built against the enclosing CUDA package set scope.
+            final.lib.mapAttrs' (redistVersion: redistManifest: {
+              name = finalCuda.lib.mkVersionedName redistName redistVersion;
+              value = final.lib.recurseIntoAttrs (
+                final.lib.concatMapAttrs (
+                  name: release:
+                  # Filter for supported packages and releases
+                  final.lib.optionalAttrs (final.lib.hasAttr name finalCudaPackages) {
+                    ${name} = finalCudaPackages.${name}.overrideAttrs (prevAttrs: {
+                      passthru = prevAttrs.passthru // {
+                        inherit release;
+                      };
+                    });
+                  }
+                ) redistManifest
+              );
+            }) finalCuda.manifests.${redistName}
+          )
+        ];
+      }
     );
+  };
 in
 releaseLib.mapTestOn (
-  lib.mapAttrs (lib.const releaseLib.packagePlatforms) releaseLib.pkgs.cudaPackagesVersions
+  lib.mapAttrs (
+    _: cudaPackages:
+    let
+      redistVersions = lib.attrNames releaseLib.pkgs._cuda.manifests.${redistName};
+      versionedRedistNames = lib.map (releaseLib.pkgs._cuda.lib.mkVersionedName redistName) redistVersions;
+    in
+    # Extract the versioned redist names from each CUDA package set.
+    releaseLib.packagePlatforms (lib.recurseIntoAttrs (lib.getAttrs versionedRedistNames cudaPackages))
+  ) releaseLib.pkgs.cudaPackagesVersions
 )
