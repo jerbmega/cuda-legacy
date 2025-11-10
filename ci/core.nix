@@ -42,5 +42,5 @@ let
   };
 in
 releaseLib.mapTestOn (
-  lib.genAttrs (lib.attrNames releaseLib.pkgs.cudaPackagesVersions) (lib.const { pkgs = packages; })
+  lib.mapAttrs (lib.const (lib.const { pkgs = packages; })) releaseLib.pkgs.cudaPackagesVersions
 )

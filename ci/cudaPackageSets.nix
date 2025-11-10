@@ -15,8 +15,17 @@
   nixpkgs ? null,
 }@args:
 let
-  inherit (import ./common.nix args) lib releaseLib;
+  # We must scrub the jobs ourselves given we want to ignore packages marked as broken within the package set;
+  # they are known to be broken.
+  inherit (import ./common.nix (args // { scrubJobs = false; }))
+    lib
+    recursiveScrubAndKeepEvaluatable
+    releaseLib
+    ;
 in
-releaseLib.mapTestOn (
-  lib.mapAttrs (lib.const releaseLib.packagePlatforms) releaseLib.pkgs.cudaPackagesVersions
+# Ignore packages which are marked as broken and scrub all packages.
+recursiveScrubAndKeepEvaluatable (
+  releaseLib.mapTestOn (
+    lib.mapAttrs (lib.const releaseLib.packagePlatforms) releaseLib.pkgs.cudaPackagesVersions
+  )
 )

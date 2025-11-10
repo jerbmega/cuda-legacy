@@ -8,6 +8,9 @@
   # The system evaluating this expression
   evalSystem ? builtins.currentSystem or "x86_64-linux",
 
+  # Whether to apply hydraJob to each derivation.
+  scrubJobs ? true,
+
   # Specific CUDA capabilities to set.
   cudaCapabilities ? null,
 
@@ -23,14 +26,29 @@ let
 
   # Default values won't make unsupplied arguments present; they just make the variable available in the scope.
   nixpkgs = args.nixpkgs or self.outputs.inputs.nixpkgs.outPath;
+
+  inherit (self.outputs.inputs.nixpkgs) lib;
 in
 {
   inherit nixpkgs self;
 
-  inherit (self.outputs.inputs.nixpkgs) lib;
+  inherit lib;
+
+  recursiveScrubAndKeepEvaluatable =
+    let
+      isNotDerivation = x: !lib.isDerivation x;
+      canDeepEval = expr: (builtins.tryEval (builtins.deepSeq expr expr)).success;
+    in
+    lib.mapAttrsRecursiveCond isNotDerivation (
+      _: drv:
+      let
+        scrubbed = lib.hydraJob drv;
+      in
+      lib.optionalAttrs (canDeepEval scrubbed) scrubbed
+    );
 
   releaseLib = import (nixpkgs + "/pkgs/top-level/release-lib.nix") {
-    inherit supportedSystems;
+    inherit scrubJobs supportedSystems;
     system = evalSystem;
     nixpkgsArgs = {
       __allowFileset = false;
