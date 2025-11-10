@@ -1,98 +1,86 @@
 {
+  # These are stub inputs. We provide defaults for them in the definition of outputs.
+  #
+  # Declaring inputs as `inputs.<name>,follows = "";` is equivalent to setting the input to self (so it brings it no
+  # dependencies), but allows us to use `--override-input` because it *is* an input (which we cannot do without
+  # defining it).
+  #
+  # In the creation of partitions below, we compare `inputs.<name>.narHash` against `inputs.self.narHash` and
+  # conditionally forward explicitly provided inputs, using a default if the NAR hashes of the two match (indicating
+  # the absence of an override).
   inputs = {
-    flake-parts = {
-      inputs.nixpkgs-lib.follows = "nixpkgs";
-      url = "github:hercules-ci/flake-parts";
-    };
-    nixpkgs.url = "github:NixOS/nixpkgs";
-    git-hooks-nix = {
-      inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:cachix/git-hooks.nix";
-    };
-    treefmt-nix = {
-      inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:numtide/treefmt-nix";
-    };
+    flake-parts.follows = "";
+    nixpkgs.follows = "";
   };
 
+  # NOTE: As a consequence of pushing down use of the flake-parts input, but must stick to builtins in constructing
+  # `outputs` instead of using flake-parts.inputs.nixpkgs-lib.lib.
   outputs =
-    inputs:
+    _inputs:
     let
-      inherit (inputs.flake-parts.lib) mkFlake;
-      inherit (inputs.nixpkgs) lib;
-      inherit (lib.attrsets) genAttrs;
-      systems = [
-        "aarch64-linux"
-        "x86_64-linux"
-      ];
-      mkNixpkgs =
-        system:
-        import inputs.nixpkgs {
-          # TODO: Due to the way Nixpkgs is built in stages, the config attribute set is not re-evaluated.
-          # This is problematic for us because we use it to signal the CUDA capabilities to the overlay.
-          # The only way I've found to combat this is to use pkgs.extend, which is not ideal.
-          # TODO: This also means that Nixpkgs needs to be imported *with* the correct config attribute set
-          # from the start, unless they're willing to re-import Nixpkgs with the correct config.
-          config = {
-            allowUnfree = true;
-            cudaSupport = true;
+      inherit (builtins) getFlake mapAttrs;
+
+      inputs =
+        let
+          defaults = {
+            nixpkgs = getFlake "github:NixOS/nixpkgs/c4efd683cf02958ebb2111603de84abe3f89de3f";
+            flake-parts = getFlake "github:hercules-ci/flake-parts/0010412d62a25d959151790968765a70c436598b";
           };
-          localSystem = { inherit system; };
-          overlays = [ inputs.self.overlays.default ];
+
+          # If processing self or an input distinct from self, pass it through.
+          # Otherwise, we have a stub input and should use its default.
+          inputOrDefault =
+            self: name: value:
+            if name == "self" || self.narHash != value.narHash then value else defaults.${name};
+        in
+        mapAttrs (inputOrDefault _inputs.self) _inputs;
+
+      # NOTE: None of these overlays change the default version of any package sets;
+      # For example, including `overlays.cudaPackages_11_4` will not set `cudaPackages_11` or `cudaPackages`;
+      # it only replaces `cudaPackages_11_4`.
+      overlays.default = import ./overlays;
+
+      flake = inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+        # Required but can be empty -- this is set by the various sub-flake-modules.
+        systems = [ ];
+
+        imports = [
+          inputs.flake-parts.flakeModules.partitions
+        ];
+
+        flake = {
+          inherit overlays;
         };
-      # Memoization through lambda lifting.
-      nixpkgsInstances = genAttrs systems mkNixpkgs;
+
+        partitionedAttrs = {
+          checks = "dev";
+          formatter = "dev";
+
+          legacyPackages = "ci";
+        };
+
+        partitions = {
+          # `dev` includes formatters and linters.
+          dev = {
+            extraInputs = { inherit (inputs) nixpkgs; };
+            extraInputsFlake = ./dev;
+            module = ./dev/flakeModule.nix;
+          };
+
+          # `ci` sets `_modules.args.pkgs`, exposes it as `legacyPackages`.
+          ci = {
+            extraInputs = { inherit (inputs) nixpkgs; };
+            module = ./ci/flakeModule.nix;
+          };
+        };
+      };
     in
-    mkFlake { inherit inputs; } {
-      inherit systems;
-
-      imports = [
-        inputs.treefmt-nix.flakeModule
-        inputs.git-hooks-nix.flakeModule
-      ];
-
-      flake.overlays.default = import ./overlay.nix;
-
-      transposition.hydraJobs.adHoc = true;
-
-      perSystem =
-        {
-          config,
-          pkgs,
-          system,
-          ...
-        }:
-        {
-          _module.args.pkgs = nixpkgsInstances.${system};
-
-          legacyPackages = pkgs;
-
-          hydraJobs = import ./hydraJobs.nix { inherit lib pkgs; };
-
-          pre-commit.settings.hooks = {
-            # Formatter checks
-            treefmt = {
-              enable = true;
-              package = config.treefmt.build.wrapper;
-            };
-
-            # Nix checks
-            deadnix.enable = true;
-            nil.enable = true;
-            statix.enable = true;
-          };
-
-          treefmt = {
-            projectRootFile = "flake.nix";
-            programs = {
-              # Nix
-              nixfmt.enable = true;
-
-              # Shell
-              shellcheck.enable = true;
-              shfmt.enable = true;
-            };
-          };
-        };
+    {
+      inherit inputs overlays;
+      inherit (flake)
+        checks
+        formatter
+        legacyPackages
+        ;
     };
 }
