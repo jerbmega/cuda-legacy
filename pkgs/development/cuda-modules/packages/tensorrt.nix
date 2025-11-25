@@ -3,17 +3,14 @@
   backendStdenv,
   buildRedist,
   cuda_cudart,
-  cuda_nvrtc,
   cudaAtLeast,
   cudaMajorMinorVersion,
-  cudnn,
   lib,
   libcudla, # only for Jetson
   patchelf,
 }:
 let
   inherit (backendStdenv) cudaCapabilities hostRedistSystem;
-  inherit (lib.attrsets) getLib;
   inherit (lib.lists) optionals;
   inherit (lib.strings) concatStringsSep;
 in
@@ -59,8 +56,6 @@ buildRedist (
     nativeBuildInputs = [ patchelf ];
 
     buildInputs = [
-      (getLib cudnn)
-      (getLib cuda_nvrtc)
       cuda_cudart
     ]
     ++ optionals libcudla.meta.available [ libcudla ];
@@ -191,11 +186,6 @@ buildRedist (
         assertion = tensorrtAtLeast105 -> allCCNewerThan75;
       }
     ];
-
-    passthru = {
-      # The CUDNN used with TensorRT.
-      inherit cudnn;
-    };
 
     meta = {
       description = "SDK that facilitates high-performance machine learning inference";
