@@ -28,7 +28,6 @@ final: prev: {
             finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcublasmp.nix
               { };
           libcudss = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/libcudss.nix { };
-          tensorrt = finalCudaPackages.callPackage ../pkgs/development/cuda-modules/packages/tensorrt.nix { };
         })
       ];
     }
@@ -41,6 +40,9 @@ final: prev: {
         final.callPackage final._cuda.bootstrapData.cudaPackagesPath {
           manifests = final._cuda.lib.selectManifests manifestVersions;
         };
+
+      # NOTE: Thor is supported from CUDA 13.0, so our check needs to capture whether pre-Thor devices were selected.
+      hasPreThorJetsonCudaCapability = final.lib.any (final.lib.flip final.lib.versionOlder "10.1");
     in
     {
       cudaPackages_11_4 = mkCudaPackages {
@@ -133,7 +135,7 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.9.0";
+          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
         };
 
       cudaPackages_12_8 =
@@ -154,7 +156,7 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.9.0";
+          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
         };
 
       cudaPackages_12_9 =
@@ -175,12 +177,14 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.9.0";
+          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
         };
 
       cudaPackages_13_0 =
         let
-          inherit (final.cudaPackagesVersions.cudaPackages_13_0.backendStdenv) hostRedistSystem;
+          inherit (final.cudaPackagesVersions.cudaPackages_13_0.backendStdenv)
+            requestedJetsonCudaCapabilities
+            ;
         in
         mkCudaPackages {
           cublasmp = "0.6.0";
@@ -196,8 +200,8 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          # If using Jetson prior to Thor, use 10.7.0, otherwise use the latest.
-          tensorrt = if hostRedistSystem == "linux-aarch64" then "10.7.0" else "10.14.1";
+          tensorrt =
+            if hasPreThorJetsonCudaCapability requestedJetsonCudaCapabilities then "10.7.0" else "10.14.1";
         };
     };
 }
