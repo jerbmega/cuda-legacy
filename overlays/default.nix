@@ -18,4 +18,6 @@ composeManyExtensions [
   (import ./cudaPackagesVersions.nix)
   # Add attributes which do not exist
   (import ./auto.nix)
+  # Various fixes
+  (import ./fixes.nix)
 ]
