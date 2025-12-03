@@ -1,0 +1,172 @@
+From 0806de9dab17f2d92a506e971d64e4e529c4a39c Mon Sep 17 00:00:00 2001
+From: Connor Baker <ConnorBaker01@gmail.com>
+Date: Tue, 2 Dec 2025 22:18:08 +0000
+Subject: [PATCH] resize_antialias_impl.cu: work around NVCC CUDA 11.4 GCC 10
+ bug
+
+CICC fails with LLVM parsing error due to macros in two files:
+https://github.com/microsoft/onnxruntime/issues/20330
+
+I suspect it's because of the template instantiation in the argument to DISPATCH_ANTIALIAS_FILTER_SETUP:
+https://github.com/microsoft/onnxruntime/blob/2b659e4d1a8a16574b87804c4783e1d36bad7d4d/onnxruntime/core/providers/cuda/tensor/resize_antialias_impl.cu#L762-L764
+
+Replacing the variadic argument in DISPATCH_ANTIALIAS_FILTER_SETUP with a single argument yields an error
+during pre-processing stating DISPATCH_ANTIALIAS_FILTER_SETUP expected two arguments but was provided seven.
+That roughly lines up with the number of arguments (comma delimited) provided as template parameters.
+
+Signed-off-by: Connor Baker <ConnorBaker01@gmail.com>
+---
+ .../cuda/tensor/resize_antialias_impl.cu      | 117 +++++++++---------
+ 1 file changed, 60 insertions(+), 57 deletions(-)
+
+diff --git a/onnxruntime/core/providers/cuda/tensor/resize_antialias_impl.cu b/onnxruntime/core/providers/cuda/tensor/resize_antialias_impl.cu
+index d56e4bc538..ef698db503 100644
+--- a/onnxruntime/core/providers/cuda/tensor/resize_antialias_impl.cu
++++ b/onnxruntime/core/providers/cuda/tensor/resize_antialias_impl.cu
+@@ -758,23 +758,26 @@ void ResizeTrilinearUpsample(
+   auto h_w_interpolate_result_buffer_ptr = AllocateTyped<T>(allocate_temp_space, h_w_interpolate_result_buffer_size);
+ 
+   // clang-format off
+-  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, [&]() {
+-    _SetupTrilinerarUpsampleFilterAntiAlias<AccumType,
+-                                            TriLinearFilter,
+-                                            coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>(
+-        inferred_input_dims,
+-        inferred_output_dims,
+-        inferred_dim_rscales,
+-        std::make_tuple(roi_vals[rank - 3], roi_vals[rank - 2], roi_vals[rank - 1]),  // roi starts d, h, w
+-        std::make_tuple(roi_vals[rank - 3 + rank], roi_vals[rank - 2 + rank],         // roi ends d, h, w
+-                        roi_vals[rank - 1 + rank]),
+-        std::make_tuple(z_scaled_support, h_scaled_support, w_scaled_support),
+-        std::make_tuple(z_window_size, h_window_size, w_window_size),
+-        exclude_outside,
+-        GetTyped<int64_t>(bounds_buffer_ptr),
+-        GetTyped<int64_t>(out_of_bounds_buffer_ptr),
+-        std::make_tuple(z_weighted_buffer, y_weighted_buffer, w_weighted_buffer));
+-  });
++#define _fn \
++  [&]() { \
++    _SetupTrilinerarUpsampleFilterAntiAlias<AccumType, \
++                                            TriLinearFilter, \
++                                            coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>( \
++        inferred_input_dims, \
++        inferred_output_dims, \
++        inferred_dim_rscales, \
++        std::make_tuple(roi_vals[rank - 3], roi_vals[rank - 2], roi_vals[rank - 1]),  /* roi starts d, h, w */ \
++        std::make_tuple(roi_vals[rank - 3 + rank], roi_vals[rank - 2 + rank],         /* roi ends d, h, w */ \
++                        roi_vals[rank - 1 + rank]), \
++        std::make_tuple(z_scaled_support, h_scaled_support, w_scaled_support), \
++        std::make_tuple(z_window_size, h_window_size, w_window_size), \
++        exclude_outside, \
++        GetTyped<int64_t>(bounds_buffer_ptr), \
++        GetTyped<int64_t>(out_of_bounds_buffer_ptr), \
++        std::make_tuple(z_weighted_buffer, y_weighted_buffer, w_weighted_buffer)); \
++  }
++  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, _fn);
++#undef _fn
+ 
+   // clang-format on
+   const fast_divmod div_w_image(narrow<int>(num_channels * input_depth * input_height * output_width));
+@@ -904,24 +907,26 @@ void ResizeBiLinearUpsample(cudaStream_t stream,
+   auto image_temp_buffer = AllocateTyped<T>(allocate_temp_space, narrow<size_t>(temp_buf_size));
+ 
+   // clang-format off
+-  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, [&]() {
+-    //  Data is d, h, w in tuples
+-
+-    _SetupBilinearUpsampleFilterAntiAlias<AccumType,
+-                                          BilinearFilter,
+-                                          coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>(
+-        std::make_tuple(input_height, input_width),
+-        std::make_tuple(output_height, output_width),
+-        std::make_tuple(h_scale, w_scale),
+-        std::make_tuple(roi_vals[rank - 2], roi_vals[rank - 1]),                // roi starts h, w
+-        std::make_tuple(roi_vals[rank - 2 + rank], roi_vals[rank - 1 + rank]),  // roi ends h, w
+-        std::make_tuple(h_scaled_support, w_scaled_support),
+-        std::make_tuple(h_window_size, w_window_size),
+-        onnxruntime::antialias_constants::kCubicCoeffA, exclude_outside,
+-        GetTyped<int64_t>(bounds_buffer_ptr),
+-        GetTyped<int64_t>(out_of_bounds_buffer_ptr),
+-        std::make_tuple(y_weighted_buffer, w_weighted_buffer));
+-  });
++#define _fn \
++  [&]() { \
++    /*  Data is d, h, w in tuples */ \
++    _SetupBilinearUpsampleFilterAntiAlias<AccumType, \
++                                          BilinearFilter, \
++                                          coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>( \
++        std::make_tuple(input_height, input_width), \
++        std::make_tuple(output_height, output_width), \
++        std::make_tuple(h_scale, w_scale), \
++        std::make_tuple(roi_vals[rank - 2], roi_vals[rank - 1]),                /* roi starts h, w */ \
++        std::make_tuple(roi_vals[rank - 2 + rank], roi_vals[rank - 1 + rank]),  /* roi ends h, w */ \
++        std::make_tuple(h_scaled_support, w_scaled_support), \
++        std::make_tuple(h_window_size, w_window_size), \
++        onnxruntime::antialias_constants::kCubicCoeffA, exclude_outside, \
++        GetTyped<int64_t>(bounds_buffer_ptr), \
++        GetTyped<int64_t>(out_of_bounds_buffer_ptr), \
++        std::make_tuple(y_weighted_buffer, w_weighted_buffer)); \
++  }
++  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, _fn);
++#undef _fn
+ 
+   // clang-format on
+   const fast_divmod div_step_image{narrow<int>(num_channels * input_height * output_width)};
+@@ -1031,22 +1036,26 @@ void ResizeBicubicUpsample(cudaStream_t stream,
+   auto image_temp_buffer = AllocateTyped<T>(allocate_temp_space, narrow<size_t>(temp_buf_size));
+ 
+   // clang-format off
+-  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, [&]() {
+-    _SetupBilinearUpsampleFilterAntiAlias<AccumType,
+-                                          BiCubicFilter,
+-                                          coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>(
+-        std::make_tuple(input_height, input_width),
+-        std::make_tuple(output_height, output_width),
+-        std::make_tuple(h_scale, w_scale),
+-        std::make_tuple(roi_vals[rank - 2], roi_vals[rank - 1]),                // roi starts h, w
+-        std::make_tuple(roi_vals[rank - 2 + rank], roi_vals[rank - 1 + rank]),  // roi ends h, w
+-        std::make_tuple(h_scaled_support, w_scaled_support),
+-        std::make_tuple(h_window_size, w_window_size),
+-        onnxruntime::antialias_constants::kCubicCoeffA, exclude_outside,
+-        GetTyped<int64_t>(bounds_buffer_ptr),
+-        GetTyped<int64_t>(out_of_bounds_buffer_ptr),
+-        std::make_tuple(y_weighted_buffer, w_weighted_buffer));
+-  });
++#define _fn \
++  [&]() { \
++    _SetupBilinearUpsampleFilterAntiAlias<AccumType, \
++                                          BiCubicFilter, \
++                                          coord_t><<<blocksPerDimsMappingGrid, 32, 0, stream>>>( \
++        std::make_tuple(input_height, input_width), \
++        std::make_tuple(output_height, output_width), \
++        std::make_tuple(h_scale, w_scale), \
++        std::make_tuple(roi_vals[rank - 2], roi_vals[rank - 1]),                /* roi starts h, w */ \
++        std::make_tuple(roi_vals[rank - 2 + rank], roi_vals[rank - 1 + rank]),  /* roi ends h, w */ \
++        std::make_tuple(h_scaled_support, w_scaled_support), \
++        std::make_tuple(h_window_size, w_window_size), \
++        onnxruntime::antialias_constants::kCubicCoeffA, exclude_outside, \
++        GetTyped<int64_t>(bounds_buffer_ptr), \
++        GetTyped<int64_t>(out_of_bounds_buffer_ptr), \
++        std::make_tuple(y_weighted_buffer, w_weighted_buffer)); \
++  }
++  DISPATCH_ANTIALIAS_FILTER_SETUP(coordinate_transform_mode, _fn);
++#undef _fn
++
+   // clang-format on
+   const fast_divmod div_step_image(narrow<int>(num_channels * input_height * output_width));
+   // clang-format off
+@@ -1169,11 +1178,5 @@ void ResizeAntiAliasImpl(
+       T* output_data,                                               \
+       const size_t N);
+ 
+-SPECIALIZED_ANTIALIAS_IMPL(float)
+-SPECIALIZED_ANTIALIAS_IMPL(double)
+-SPECIALIZED_ANTIALIAS_IMPL(half)
+-SPECIALIZED_ANTIALIAS_IMPL(int32_t)
+-SPECIALIZED_ANTIALIAS_IMPL(uint8_t)
+-
+ }  // namespace cuda
+ }  // namespace onnxruntime
+-- 
+2.51.0
+
