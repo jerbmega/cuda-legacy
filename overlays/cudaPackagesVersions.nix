@@ -119,7 +119,10 @@ final: prev: {
 
       cudaPackages_12_6 =
         let
-          inherit (final.cudaPackagesVersions.cudaPackages_12_6.backendStdenv) hasJetsonCudaCapability;
+          inherit (final.cudaPackagesVersions.cudaPackages_12_6.backendStdenv)
+            hasJetsonCudaCapability
+            hostPlatform
+            ;
         in
         mkCudaPackages {
           cublasmp = "0.6.0";
@@ -135,12 +138,21 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
+          tensorrt =
+            if hasJetsonCudaCapability then
+              "10.7.0"
+            else if hostPlatform.isAarch64 then
+              "10.13.0"
+            else
+              "10.14.1";
         };
 
       cudaPackages_12_8 =
         let
-          inherit (final.cudaPackagesVersions.cudaPackages_12_8.backendStdenv) hasJetsonCudaCapability;
+          inherit (final.cudaPackagesVersions.cudaPackages_12_8.backendStdenv)
+            hasJetsonCudaCapability
+            hostPlatform
+            ;
         in
         mkCudaPackages {
           cublasmp = "0.6.0";
@@ -156,12 +168,21 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
+          tensorrt =
+            if hasJetsonCudaCapability then
+              "10.7.0"
+            else if hostPlatform.isAarch64 then
+              "10.13.0"
+            else
+              "10.14.1";
         };
 
       cudaPackages_12_9 =
         let
-          inherit (final.cudaPackagesVersions.cudaPackages_12_9.backendStdenv) hasJetsonCudaCapability;
+          inherit (final.cudaPackagesVersions.cudaPackages_12_9.backendStdenv)
+            hasJetsonCudaCapability
+            hostPlatform
+            ;
         in
         mkCudaPackages {
           cublasmp = "0.6.0";
@@ -177,7 +198,13 @@ final: prev: {
           nvjpeg2000 = "0.9.0";
           nvpl = "25.5";
           nvtiff = "0.5.1";
-          tensorrt = if hasJetsonCudaCapability then "10.7.0" else "10.14.1";
+          tensorrt =
+            if hasJetsonCudaCapability then
+              "10.7.0"
+            else if hostPlatform.isAarch64 then
+              "10.13.0"
+            else
+              "10.14.1";
         };
 
       cudaPackages_13_0 =
