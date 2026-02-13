@@ -329,7 +329,7 @@ in
   url = "https://github.com/gcc-mirror/gcc/commit/d243f4009d8071b734df16cd70f4c5d09a373769.patch";
   sha256 = "sha256-H97GZs2wwzfFGiFOgds/5KaweC+luCsWX3hRFf7+Sm4=";
 })
-
+ 
 ## gcc 10.0 and older ##############################################################################
 
 # Probably needed for gnat wrapper https://github.com/NixOS/nixpkgs/pull/62314
@@ -354,6 +354,9 @@ in
   !atLeast11 && stdenv.cc.isClang && stdenv.hostPlatform.isDarwin
 ) ./clang-genconditions.patch
 
+++ optional is10 ./10/Fix-build-with-glibc-2.42.patch
+++ optional is10 ./10/Remove-reference-to-obsolete-termio.patch
+
 ## gcc 9.0 and older ##############################################################################
 
 ++ optional (majorVersion == "9") ./9/fix-struct-redefinition-on-glibc-2.36.patch
@@ -365,3 +368,6 @@ in
 # Make Darwin bootstrap respect whether the assembler supports `--gstabs`,
 # which is not supported by the clang integrated assembler used by default on Darwin.
 ++ optional (is9 && hostPlatform.isDarwin) ./9/gcc9-darwin-as-gstabs.patch
+
+++ optional is9 ./9/Fix-build-with-glibc-2.42.patch
+++ optional is9 ./9/Remove-reference-to-obsolete-termio.patch
